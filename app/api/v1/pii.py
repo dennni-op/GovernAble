@@ -24,9 +24,11 @@ async def scan_file(file: UploadFile = File(...)):
     content = await file.read()
     findings = []
     count_line = 0
+    # iterate through each line in the file content
     for line in content.decode().splitlines():
         matches = detect_pattern(line)
         count_line += 1
+        # if the matches (function return true) exists return line n and type
         if matches:
             findings.append({"Line Number": count_line, "Types": matches })
     return JSONResponse(content={
