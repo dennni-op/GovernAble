@@ -1,5 +1,10 @@
 from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+from presidio_anonymizer.entities import OperatorConfig
+from pprint import pprint
+import json
 import re
 router = APIRouter()
 
