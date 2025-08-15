@@ -53,7 +53,7 @@ def calc_score(matched, example):
     Compare the matched text to the example format and return a score (0-1)
     """
     matches = sum(1 for a, b in zip(matched, example) if a == b)
-    return int((matches / len(example)) / 100) if example else 0
+    return float((matches / len(example))  / 100) if example else 0
 
 # ======================
 # 4. Helper: File content extraction
@@ -75,7 +75,8 @@ def extract_text_from_file(file: UploadFile) -> str:
         return "\n".join([", ".join(row) for row in csv_reader])
 
     elif filename.endswith(".docx"):
-        document = Document(file.file)
+        from io import BytesIO
+        document = Document(BytesIO(content))
         return "\n".join([p.text for p in document.paragraphs])
 
     else:
