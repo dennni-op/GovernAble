@@ -109,5 +109,3 @@ Commercial License → web/, proxy/, enterprise/
 GovernAble bridges open-source security tools with enterprise governance needs.
 
 ⚡ Protect data. Govern AI. Stay compliant. ⚡
-
-
