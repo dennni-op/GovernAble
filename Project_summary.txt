@@ -4,8 +4,7 @@ Cybersecurity AI Data Validator - Project Summary
 
 🌐 IDEA:
 --------
-Create a cybersecurity SaaS platform that helps AI systems and data-heavy enterprises (banks, fintechs, tech companies) validate the quality and sensitivity of incoming data. 
-The system will focus on detecting Personally Identifiable Information (PII) and secrets in uploaded files and data streams, while providing structured feedback.
+Create a cybersecurity SaaS platform that helps AI systems and data-heavy enterprises (banks, fintechs, tech companies) validate the quality and sensitivity of incoming data. The system focuses on detecting Personally Identifiable Information (PII) and secrets in uploaded files and data streams, while providing structured feedback.
 
 🎯 CORE FEATURES (MVP):
 ------------------------
@@ -16,37 +15,58 @@ The system will focus on detecting Personally Identifiable Information (PII) and
 
 ⚙️ TECHNICAL SOLUTION & TOOLS:
 ------------------------------
-- FastAPI (Python) - lightweight, fast web framework for the API
-- Uvicorn - ASGI server for running the FastAPI app
-- Presidio / SpaCy / Regex - for PII and secret detection logic
-- .env - manage environment configuration
-- SQLite/PostgreSQL - for logging and storing scan results
-- Pytest - for test automation
-- GitHub + Git - version control and collaboration
-- Optional: Docker - containerize the solution for easy deployment
+- FastAPI (Python) - API backend
+- Uvicorn - ASGI server
+- Presidio / SpaCy / Regex - PII and secret detection
+- SQLite/PostgreSQL - scan result storage
+- Pytest - test automation
+- Docker - containerization
+- TypeScript (Node.js) - proxy/governor
+- GitHub + Git - version control
 
 📁 REPO STRUCTURE:
 ------------------
 project-root/
 │
-├── app/
-│   ├── main.py              # Entry point for FastAPI app
-│   └── api/
-│       └── v1/
-│           └── pii.py       # API route for PII scanning
+├── api/
+│   ├── main.py
+│   ├── config.py
+│   ├── routes/
+│   │   ├── scan.py
+│   │   └── enforce.py
+│   └── services/
+│       ├── policies.py
+│       └── storage.py
+│
+├── engine/
+│   ├── cli.py
+│   ├── scanner.py
+│   └── rules/
+│       └── base_patterns.yml
+│
+├── enterprise/
+│   ├── compliance_packs/
+│   └── integrations/
+│
+├── proxy/
+│   └── governor.ts
 │
 ├── tests/
-│   └── test_pii.py          # Unit test for /scan endpoint
+│   ├── test_file_parser.py
+│   ├── test_pii.py
+│   ├── test_policies.py
+│   ├── test_proxy.ts
+│   └── test_scanner.py
 │
-├── .env                     # Environment configuration
-├── .gitignore               # Files to exclude from git tracking
-├── README.md                # Project overview and instructions
+├── web/
+│   ├── backend/
+│   └── frontend/
+│
+├── requirements.txt
+├── docker-compose.yml
+├── README.md
+├── LICENSE
+├── CONTRIBUTING.md
 
-🚀 NEXT STEPS:
---------------
-- Implement real PII scanning logic using Presidio
-- Add authentication (JWT, API key)
-- Use PostgreSQL for production DB
-- Dockerize the app for deployment
-- Add frontend or integration for enterprise dashboards
+---
 
