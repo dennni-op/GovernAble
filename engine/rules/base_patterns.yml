@@ -1,3 +1,5 @@
 # Default open-core patterns for GovernAble engine
 email: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
 phone: '\+?[1-9]\d{1,14}'
+NHS_number: '\b\d{3}\s?\d{3}\s?\d{4}\b'
+NI_number: '\b[A-CEGHJ-PR-TW-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D]\b'
