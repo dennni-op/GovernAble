@@ -1,2 +1,2 @@
 # OSS contributors guide
-# ...original content to be added...
+
