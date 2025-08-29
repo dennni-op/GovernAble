@@ -1,0 +1,391 @@
+Task received — I’ll produce a developer-focused, file-by-file plan + concrete code examples you can copy into your repo to turn the current codebase into a 3-month MVP.
+
+Checklist (what you asked for)
+- Provide per-file guidance for the codebase (engine, api, proxy, web, enterprise, tests, devops, docs). ✅
+- Give concrete example code for key files (scanner, API endpoints, config, storage, policies, proxy stub). ✅
+- Provide input/output contracts, edge cases, tests, and run instructions. ✅
+
+High-level plan (what I’ll deliver next)
+- Short contract and priority for each major file/folder.
+- Concrete, copyable code snippets / minimal implementations for each critical file.
+- Test examples and quick run commands (PowerShell-friendly).
+- 3-month incremental roadmap and next steps.
+
+Important: I’ll reference your existing scanner.py design and keep everything modular so the api, proxy, and web call into the engine.
+
+---
+
+## 1) Core Detection Engine (engine)
+
+Goal: stable, well-tested API that returns structured findings. Keep scanner.py as the single source of truth.
+
+Contract (scanner module)
+- Inputs:
+  - text: str OR file path or stream
+  - patterns: Optional[Dict[str,str]] (loaded from YAML)
+  - use_presidio: bool
+- Outputs:
+  - Dict with keys: regex: List[str], presidio: List[str] (can be empty lists)
+- Errors:
+  - FileNotFoundError for missing files
+  - YAML parse errors surfaced as exceptions (catch at API layer)
+
+Enhancements (copy/paste-ready ideas)
+- Add typed result objects + severity and sample match context.
+- Provide batch scanning and a single normalized result shape.
+
+Example improvements (extend your scanner.py):
+```python
+# ...existing code...
+from dataclasses import dataclass
+import re
+
+@dataclass
+class Finding:
+    source: str        # 'regex' or 'presidio'
+    label: str         # e.g., 'AWS_ACCESS_KEY', 'EMAIL'
+    snippet: str       # small snippet / matched text
+    index: int         # start index in text
+
+def regex_scan_with_context(text: str, patterns: Dict[str, str]) -> List[Finding]:
+    findings = []
+    for label, pattern in patterns.items():
+        for m in re.finditer(pattern, text, flags=re.MULTILINE):
+            snippet = text[max(0, m.start()-20):m.end()+20]
+            findings.append(Finding(source="regex", label=label, snippet=snippet, index=m.start()))
+    return findings
+
+def scan_text_normalized(text: str, patterns: Optional[Dict[str,str]] = None, use_presidio: bool = True):
+    results = {"findings": []}
+    if patterns:
+        results['findings'].extend([f.__dict__ for f in regex_scan_with_context(text, patterns)])
+    if use_presidio:
+        for et in presidio_scan(text):
+            results['findings'].append({"source":"presidio","label":et,"snippet":"","index":-1})
+    return results
+```
+
+base_patterns.yml (how to structure)
+- Use mapping label -> pattern and optional metadata.
+Example entry:
+```yaml
+EMAIL:
+  pattern: '(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}'
+  severity: low
+AWS_ACCESS_KEY:
+  pattern: 'AKIA[0-9A-Z]{16}'
+  severity: high
+```
+Load accordingly and validate shape.
+
+Tests for engine
+- Unit tests for `load_patterns`, `regex_scan_with_context`, `scan_text_normalized`.
+Example pytest:
+```python
+def test_regex_scan_detects_email():
+    patterns = {"EMAIL":"[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}"}
+    res = regex_scan_with_context("contact me at test@example.com", patterns)
+    assert any(f.label=="EMAIL" for f in res)
+```
+
+---
+
+## 2) API Layer (api)
+
+Priority: expose `/scan`, `/scan/batch`, policies CRUD, and a small `/health` endpoint.
+
+Suggested stack: FastAPI + Pydantic + SQLAlchemy (SQLite for dev => PostgreSQL in prod). Use async endpoints where possible.
+
+Core files & minimal implementations
+
+config.py — environment-aware settings (Pydantic BaseSettings)
+```python
+from pydantic import BaseSettings
+
+class Settings(BaseSettings):
+    ENV: str = "development"
+    DATABASE_URL: str = "sqlite:///./governable.db"
+    API_KEY: str = ""
+    PORT: int = 8000
+
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+```
+
+main.py — app + routers + docs
+```python
+from fastapi import FastAPI
+from .routes import scan, enforce
+from .config import settings
+
+app = FastAPI(title="GovernAble API")
+
+app.include_router(scan.router, prefix="/scan", tags=["scan"])
+app.include_router(enforce.router, prefix="/enforce", tags=["enforce"])
+
+@app.get("/health")
+def health():
+    return {"status":"ok","env": settings.ENV}
+```
+
+scan.py — main scanning endpoint
+```python
+from fastapi import APIRouter, File, UploadFile, Form, Depends, HTTPException
+from pydantic import BaseModel
+from typing import Optional, List
+from engine.scanner import load_patterns, scan_text_normalized
+
+router = APIRouter()
+
+class ScanRequest(BaseModel):
+    text: Optional[str] = None
+    use_presidio: bool = True
+
+class ScanResponse(BaseModel):
+    findings: List[dict]
+
+@router.post("/", response_model=ScanResponse)
+async def scan_endpoint(text: Optional[str] = None, file: UploadFile = File(None), use_presidio: bool = Form(True)):
+    if not text and not file:
+        raise HTTPException(status_code=400, detail="Provide text or file")
+    if file:
+        payload = await file.read()
+        text = payload.decode('utf-8', errors='ignore')
+    patterns = load_patterns()
+    result = scan_text_normalized(text, patterns, use_presidio)
+    return result
+```
+
+enforce.py — simple policy enforcement endpoint
+```python
+from fastapi import APIRouter
+router = APIRouter()
+
+@router.post("/check")
+def check_policy(payload: dict):
+    # payload: { "text": "...", "policy_id": 1 }
+    # call engine and policy engine; return allow/block
+    return {"allowed": True, "reason": "no-violation"}
+```
+
+policies.py — policy model + validation
+- Minimal: store policies as JSON in DB or yaml files.
+- Expose functions `evaluate(policy, findings) -> (allowed:bool, reasons:list)`.
+
+storage.py — save scan results
+- Suggest SQLAlchemy model `ScanResult` with columns: id, timestamp, user_id, input_type, summary(json), raw_text (optional)
+- Minimal sync version:
+```python
+from sqlalchemy import create_engine, Column, Integer, String, Text, JSON, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+import json
+
+Base = declarative_base()
+ENGINE = create_engine("sqlite:///./governable.db", echo=False)
+
+class ScanResult(Base):
+    __tablename__ = "scan_results"
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    summary = Column(Text)  # store JSON string
+    raw_text = Column(Text)
+
+Base.metadata.create_all(ENGINE)
+
+def save_scan(summary: dict, raw_text: str = None):
+    from sqlalchemy.orm import sessionmaker
+    Session = sessionmaker(bind=ENGINE)
+    s = Session()
+    sr = ScanResult(summary=json.dumps(summary), raw_text=raw_text)
+    s.add(sr); s.commit(); s.refresh(sr)
+    return sr.id
+```
+
+Auth & Security
+- Start with simple API key via header `x-api-key` or Authorization Bearer.
+- Implement dependency in FastAPI and apply to routes.
+
+Contracts (for `/scan`)
+- Request: multipart/form-data (file) or JSON body {text, use_presidio}
+- Response:
+  - { findings: [{source, label, snippet, index}], meta: {pattern_count, engine: "regex+presidio"} }
+
+Edge cases
+- Large files: stream processing, return 413 if > max size (configurable).
+- Non-UTF8 files: decode with errors='ignore' and warn.
+
+---
+
+## 3) Proxy Layer (governor.ts)
+
+Goal: small TypeScript express proxy that forwards requests to LLMs or blocks based on `/enforce/check`.
+
+Minimal Node/Express example (TypeScript):
+```ts
+import express from "express";
+import fetch from "node-fetch"; // or undici
+const app = express();
+app.use(express.json());
+
+const API_URL = "http://localhost:8000/enforce/check";
+
+app.post("/proxy", async (req, res) => {
+  const text = JSON.stringify(req.body);
+  // call GovernAble enforce endpoint
+  const r = await fetch(API_URL, {method:"POST", body: text, headers:{ "Content-Type":"application/json" }});
+  const decision = await r.json();
+  if (!decision.allowed) {
+     return res.status(403).json({error: "Blocked by GovernAble", reasons: decision.reasons});
+  }
+  // forward to actual upstream LLM (upstream URL from config)
+  // ... fetch upstream and pipe response ...
+  res.json({status: "forwarded"});
+});
+
+app.listen(3000, ()=> console.log("governor running on 3000"));
+```
+- Integrate a simple cache for repeated checks.
+- For LLM proxying, stream / chunk handling is needed (use node http/stream).
+
+---
+
+## 4) Enterprise (enterprise)
+
+`compliance_packs/` format
+- YAML pack with rules and example policy mappings.
+Example `gdpr.yml`:
+```yaml
+name: GDPR
+description: Detect PII and require redaction
+rules:
+  - id: pii_presence
+    match: ["EMAIL","PERSON_NAME"]
+    action: require_redaction
+```
+
+`integrations/`
+- Provide webhook dispatcher interface (send alerts to Slack/Jira).
+- Start with a simple `integrations/webhook.py` that posts JSON to configured URLs.
+
+---
+
+## 5) Web Dashboard (web)
+
+Minimal MVP:
+- `backend/` can reuse api or add extra report endpoints.
+- `frontend/` simple React app: login (api-key), scan form, table of results, filter by severity, download JSON.
+
+Essential pages:
+- Dashboard (last 50 scans)
+- Scan detail (raw text + findings with highlight)
+- Policies editor (create/update YAML)
+
+Use CRA or Vite + React. For speed use plain React + MUI or Tailwind.
+
+---
+
+## 6) Tests (tests)
+
+Unit tests to prioritize:
+- Engine: pattern loading, regex detection, Presidio fallback.
+- API: `/scan` happy path and error for missing inputs.
+- Storage: saving and retrieving a scan result.
+- Proxy: enforce decision path.
+
+Example pytest for API using TestClient:
+```python
+from fastapi.testclient import TestClient
+from api.main import app
+
+client = TestClient(app)
+
+def test_scan_text():
+    resp = client.post("/scan/", json={"text":"send to test@example.com"})
+    assert resp.status_code == 200
+    assert any(f["label"] == "EMAIL" for f in resp.json()["findings"])
+```
+
+---
+
+## 7) DevOps & Local Development
+
+docker-compose.yml (dev)
+- services: api, proxy, db (postgres for staging), frontend (optional)
+- Example minimal compose for local:
+```yaml
+version: '3.8'
+services:
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes: ["./api:/app/api","./engine:/app/engine"]
+    ports: ["8000:8000"]
+  proxy:
+    build: ./proxy
+    ports: ["3000:3000"]
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: govern
+      POSTGRES_PASSWORD: govern
+      POSTGRES_DB: govern
+    ports: ["5432:5432"]
+```
+
+Requirements / dependencies (update requirements.txt)
+- fastapi
+- uvicorn[standard]
+- pydantic
+- sqlalchemy
+- pyyaml
+- presidio-analyzer (optional)
+- pytest
+
+Run commands (PowerShell):
+```powershell
+pip install -r requirements.txt
+uvicorn api.main:app --reload
+# or with Docker Compose
+docker-compose up --build
+```
+
+---
+
+## 8) Documentation & Contribution
+- README.md: include minimal quick start, endpoints, and examples.
+- CONTRIBUTING.md: PR process + how to add a pattern to base_patterns.yml + testing checklist.
+
+---
+
+## 9) 3-Month Roadmap (milestones)
+
+Month 0 (week 0): bootstrap
+- Stabilize scanner.py with normalized results and patterns YAML.
+- Add engine unit tests.
+
+Month 1: core API + storage
+- `/scan` endpoint and simple `save_scan`.
+- API key auth and health checks.
+- Add tests for API; basic docker-compose for local dev.
+
+Month 2: Enforcement + Proxy + Dashboard prototype
+- Policies CRUD + simple evaluation engine.
+- Implement governor.ts with enforcement check.
+- Start React dashboard with scan + results list.
+
+Month 3: polish + enterprise
+- Add background workers (if big files), streaming support in proxy, compliance packs.
+- Integration stubs (Slack), pagination, RBAC basics.
+- Dockerized demo and README ready for demos.
+
+---
+
+## Next steps I can do for you (pick one)
+- Generate full scan.py, main.py, SQLAlchemy models, and tests in your repo and run tests locally.
+- Scaffold a simple React frontend and Dockerfiles for api and proxy.
+- Add a robust base_patterns.yml starter pack and unit tests for scanner.
+
+Which one should I implement first? (I can start coding and run tests immediately.)
