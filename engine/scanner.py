@@ -1,80 +1,51 @@
-
-# GovernAble Core Detection Engine
+from __future__ import annotations
 import re
-import yaml
-from pathlib import Path
-from typing import List, Dict, Optional, Any
+from dataclasses import dataclass
+    
+    @dataclass
+    class Finding:
+        label: str      
+        match: str       
+        start: int       
+        end: int        
+        severity: str    
+        source: str       
+        context: str     
 
-# 1. Pattern Loading from YAML
-def load_patterns(yaml_path: Optional[str] = None) -> Dict[str, str]:
-	"""
-	Load regex patterns from a YAML file. Default is engine/rules/base_patterns.yml.
-	"""
-	if yaml_path is None:
-		yaml_path = Path(__file__).parent / "rules" / "base_patterns.yml"
-	with open(yaml_path, "r", encoding="utf-8") as f:
-		patterns = yaml.safe_load(f) or {}
-	return patterns
+    # This function just opens and reads the YAML rulebook file.
+    def load_patterns(path: Optional[Path] = None) -> Dict[str, Dict[str, str]]:
+        # ... code to open and read the yaml file ...
 
-# 2. Regex-based Detection
-def regex_scan(text: str, patterns: Dict[str, str]) -> List[str]:
-	"""
-	Scan text using regex patterns. Returns a list of detected pattern labels.
-	"""
-	findings = []
-	for label, pattern in patterns.items():
-		if re.search(pattern, text):
-			findings.append(label)
-	return findings
+    # This is the main 'Scanner' class. Think of it as the blueprint for our detective.
+    class Scanner:
+        # This is the 'constructor'. It runs when we create a new Scanner.
+        # It loads the patterns from the YAML file and gets them ready for searching.
+        def __init__(self, patterns: Optional[Dict[str, Dict[str,str]]] = None, use_presidio: bool = True):
+            self.patterns = patterns or load_patterns()
+            # ... code to prepare regex patterns ...
 
-# 3. Presidio-based Detection
-try:
-	from presidio_analyzer import AnalyzerEngine
-	analyzer = AnalyzerEngine()
-	def presidio_scan(text: str, language: str = "en") -> List[str]:
-		"""
-		Scan text using Presidio AnalyzerEngine. Returns a list of detected entity types.
-		"""
-		results = analyzer.analyze(text=text, language=language)
-		return [r.entity_type for r in results]
-except ImportError:
-	def presidio_scan(text: str, language: str = "en") -> List[str]:
-		"""
-		Dummy function if Presidio is not installed.
-		"""
-		return []
+        # This is the most important function! It takes a piece of text and
+        # searches through it using the rules we loaded.
+        def scan_text(self, text: str, max_len: int = 2_000_000) -> List[Finding]:
+            findings: List[Finding] = [] # Start with an empty list of findings.
 
-# 4. Utility Functions for Scanning
-def scan_text(text: str, patterns: Optional[Dict[str, str]] = None, use_presidio: bool = True) -> Dict[str, Any]:
-	"""
-	Scan a string of text using regex and/or Presidio.
-	"""
-	results = {}
-	if patterns:
-		results['regex'] = regex_scan(text, patterns)
-	if use_presidio:
-		results['presidio'] = presidio_scan(text)
-	return results
+            # Go through each rule (regex pattern).
+            for label, cre in self.compiled:
+                # Search for the pattern in the text.
+                for m in cre.finditer(text):
+                    # If we find a match, create a 'Finding' object with all the details.
+                    # ...
+                    # Add the new finding to our list.
+                    findings.append(Finding(...))
+            
+            # (Optional) If Presidio is installed, use it to find PII too.
+            if self.presidio:
+                # ... presidio logic ...
 
-def scan_file(filepath: str, patterns: Optional[Dict[str, str]] = None, use_presidio: bool = True) -> Dict[str, Any]:
-	"""
-	Scan a file by path.
-	"""
-	with open(filepath, "r", encoding="utf-8") as f:
-		return scan_text(f.read(), patterns, use_presidio)
+            # Return the final list of all secrets found.
+            return self._dedupe(findings)
 
-def scan_stream(stream, patterns: Optional[Dict[str, str]] = None, use_presidio: bool = True) -> Dict[str, Any]:
-	"""
-	Scan a file-like stream.
-	"""
-	return scan_text(stream.read(), patterns, use_presidio)
-
-# 5. Expose a Clean Python API
-__all__ = [
-	"load_patterns",
-	"regex_scan",
-	"presidio_scan",
-	"scan_text",
-	"scan_file",
-	"scan_stream"
-]
+        # This function just reads a file from disk and then uses scan_text on its content.
+        def scan_file(self, path: str) -> List[Finding]:
+            # ...
+            return self.scan_text(text)

@@ -1,5 +1,20 @@
-# Default open-core patterns for GovernAble engine
-email: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-phone: '\+?[1-9]\d{1,14}'
-NHS_number: '\b\d{3}\s?\d{3}\s?\d{4}\b'
-NI_number: '\b[A-CEGHJ-PR-TW-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D]\b'
+AWS_ACCESS_KEY_ID:
+  pattern: 'AKIA[0-9A-Z]{16}'
+  severity: HIGH
+  description: 'AWS Access Key ID'
+PAT_TOKEN:
+  pattern: 'ghp_[A-Za-z0-9_]{36}'
+  severity: HIGH
+  description: 'GitHub Personal Access Token'
+AWS_SECRET_ACCESS_KEY:
+  pattern: '([a-zA-Z0-9/+=]{40})' 
+  severity: HIGH
+  description: 'AWS Secret Access Key'
+NHS_NUMBER:
+  pattern: '\b\d{3} \d{3} \d{4}\b'
+  severity: HIGH
+  description: 'UK National Health Service (NHS) Number'
+UK_NI_NUMBER:
+  pattern: '\b[A-CEGHJ-PR-TW-Z]{1}\d{6}[A-D]{1}\b'
+  severity: HIGH
+  description: 'UK National Insurance Number'
