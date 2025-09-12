@@ -1,0 +1,15 @@
+# enterprise/compliance_packs/gdpr.yml
+name: GDPR
+version: 1
+description: "A list of data types to check for GDPR compliance."
+
+# This is the important part: a list of entity types.
+# These names come from the Presidio library (e.g., "PERSON") or our
+# own regex patterns in base_patterns.yml (e.g., "EMAIL_ADDRESS").
+required_entities:
+  - "PERSON"
+  - "EMAIL_ADDRESS"
+  - "IBAN_CODE"
+  - "CREDIT_CARD_NUMBER"
+
+notes: "This pack helps identify data relevant to GDPR."

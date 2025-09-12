@@ -1,41 +1,64 @@
-from fastapi import APIRouter, UploadFile, File
-from fastapi.responses import JSONResponse
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
-from presidio_anonymizer.entities import OperatorConfig
-from pprint import pprint
-import json
+from __future__ import annotations
 import re
-router = APIRouter()
+from dataclasses import dataclass
+    
+@dataclass
+class Finding:
+    label: str      
+    match: str       
+    start: int       
+    end: int        
+    severity: str    
+    source: str       
+    context: str     
+# This function just opens and reads the YAML rulebook file.
+def load_patterns(path: Optional[Path] = None) -> Dict[str, Dict[str, str]]:
+    # ... code to open and read the yaml file ...
+	ROOT = Path(__file__).resolve().parent
+	DEFAULT_PATTERNS = ROOT / "rules"/ "base_patterns.yml"
 
-def detect_pattern(text_code):
-	# define regex patterns for PII data 
-	patterns = {
-		"Email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-		"Phone": r"\+?[1-9]\d{1,14}",
-	}
-	#define findings as matches in text and add matches to list
-	findings = []
-	for label, pattern in patterns.items():
-		if re.search(pattern, text_code):
-			findings.append(label)
-	return findings
+	p = path if path else DEFAULT_PATTERNS
 
-@router.post("/scan")
-async def scan_file(file: UploadFile = File(...)):
-	# scans file
-	content = await file.read()
-	findings = []
-	count_line = 0
-	# iterate through each line in the file content
-	for line in content.decode().splitlines():
-		matches = detect_pattern(line)
-		count_line += 1
-		# if the matches (function return true) exists return line n and type
-		if matches:
-			findings.append({"Line Number": count_line, "Types": matches })
-	return JSONResponse(content={
-		"filename": file.filename,
-		"pii_found": bool(findings),
-		"Findings": findings
-	})
+	if not p.exists():
+		raise FileNotFoundError(f"Reference file not found: {p}")
+	
+	with p.open("r", encoding="utf-8") as fh:
+		return yaml.safe_load(fh) or {}
+
+# This is the main 'Scanner' class. Think of it as the blueprint for our detective.
+class Scanner:
+    # This is the 'constructor'. It runs when we create a new Scanner.
+    # It loads the patterns from the YAML file and gets them ready for searching.
+    def __init__(self, patterns: Optional[Dict[str, Dict[str,str]]] = None, use_presidio: bool = True):
+        self.patterns = patterns or load_patterns()
+        # ... code to prepare regex patterns ...
+		self.compiled = []
+		for label, meta in self.patterns.items():
+			try:
+				self.compiled.append((label, re.compile(meta["pattern"])))
+			except re.error as e:
+				continue #skip to be modified later to return invalid regex
+		self.use_presidio = use_presidio and _HAS_PRESIDIO
+		self.presidio = AnalyzerEngine() if self.use_presidio else None
+    # This is the most important function! It takes a piece of text and
+    # searches through it using the rules we loaded.
+    def scan_text(self, text: str, max_len: int = 2_000_000) -> List[Finding]:
+        findings: List[Finding] = [] # Start with an empty list of findings.
+        # Go through each rule (regex pattern).
+        for label, cre in self.compiled:
+            # Search for the pattern in the text.
+            for m in cre.finditer(text):
+                # If we find a match, create a 'Finding' object with all the details.
+                # ...
+                # Add the new finding to our list.
+                findings.append(Finding(...))
+        
+        # (Optional) If Presidio is installed, use it to find PII too.
+        if self.presidio:
+            # ... presidio logic ...
+        # Return the final list of all secrets found.
+        return self._dedupe(findings)
+    # This function just reads a file from disk and then uses scan_text on its content.
+    def scan_file(self, path: str) -> List[Finding]:
+        # ...
+        return self.scan_text(text)
