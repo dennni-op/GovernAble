@@ -15,6 +15,10 @@ NHS_NUMBER:
   severity: HIGH
   description: 'UK National Health Service (NHS) Number'
 UK_NI_NUMBER:
-  pattern: '\b[A-CEGHJ-PR-TW-Z]{1}\d{6}[A-D]{1}\b'
+  pattern: '\s*[a-zA-Z]{2}(?:[\s-]*\d[\s-]*){6}[a-zA-Z]?\s*'
   severity: HIGH
   description: 'UK National Insurance Number'
+UK_POSTCODE:
+  pattern: '([Gg][Ii][Rr] 0[Aa]{2})|((([A-Za-z][0-9]{1,2})|(([A-Za-z][A-Ha-hJ-Yj-y][0-9]{1,2})|(([A- Za-z][0-9][A-Za-z])|([A-Za-z][A-Ha-hJ-Yj-y][0-9]?[A-Za-z])))) [0-9][A-Za-z]{2})'
+  severity: MEDIUM
+  description: 'UK Postal Code (Postcode)'

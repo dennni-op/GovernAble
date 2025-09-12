@@ -1,2 +1,25 @@
-# Dev environment for tiers
-# ...original content to be added...
+# docker-compose.yml
+    version: "3.8"
+
+    # We define our 'services' or containers.
+    services:
+      # The first service is our Python API.
+      api:
+        build: . # Build the container using the Dockerfile in the current directory.
+        command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload # The command to run.
+        volumes:
+          - ./:/app # Link the current folder on our computer to the /app folder in the container. This lets us change code without rebuilding.
+        ports:
+          - "8000:8000" # Connect port 8000 on our computer to port 8000 in the container.
+
+      # The second service is our Node.js proxy.
+      proxy:
+        image: node:20 # Use a pre-made Node.js image.
+        working_dir: /srv
+        volumes:
+          - ./proxy:/srv # Link our local proxy folder.
+        command: sh -c "npm install && node proxy/governor.ts" # First install dependencies, then run.
+        ports:
+          - "8787:8787"
+        depends_on:
+          - api # IMPORTANT: This tells Docker to start the 'api' service before starting the 'proxy'.

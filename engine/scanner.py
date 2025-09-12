@@ -14,6 +14,17 @@ class Finding:
 # This function just opens and reads the YAML rulebook file.
 def load_patterns(path: Optional[Path] = None) -> Dict[str, Dict[str, str]]:
     # ... code to open and read the yaml file ...
+	ROOT = Path(__file__).resolve().parent
+	DEFAULT_PATTERNS = ROOT / "rules"/ "base_patterns.yml"
+
+	p = path if path else DEFAULT_PATTERNS
+
+	if not p.exists():
+		raise FileNotFoundError(f"Reference file not found: {p}")
+	
+	with p.open("r", encoding="utf-8") as fh:
+		return yaml.safe_load(fh) or {}
+
 # This is the main 'Scanner' class. Think of it as the blueprint for our detective.
 class Scanner:
     # This is the 'constructor'. It runs when we create a new Scanner.
@@ -21,6 +32,14 @@ class Scanner:
     def __init__(self, patterns: Optional[Dict[str, Dict[str,str]]] = None, use_presidio: bool = True):
         self.patterns = patterns or load_patterns()
         # ... code to prepare regex patterns ...
+		self.compiled = []
+		for label, meta in self.patterns.items():
+			try:
+				self.compiled.append((label, re.compile(meta["pattern"])))
+			except re.error as e:
+				continue #skip to be modified later to return invalid regex
+		self.use_presidio = use_presidio and _HAS_PRESIDIO
+		self.presidio = AnalyzerEngine() if self.use_presidio else None
     # This is the most important function! It takes a piece of text and
     # searches through it using the rules we loaded.
     def scan_text(self, text: str, max_len: int = 2_000_000) -> List[Finding]:
