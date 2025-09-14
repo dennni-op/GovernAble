@@ -1,2 +1,24 @@
-# Default open-core patterns for GovernAble engine
-# ...original content to be added...
+AWS_ACCESS_KEY_ID:
+  pattern: 'AKIA[0-9A-Z]{16}'
+  severity: HIGH
+  description: 'AWS Access Key ID'
+PAT_TOKEN:
+  pattern: 'ghp_[A-Za-z0-9_]{36}'
+  severity: HIGH
+  description: 'GitHub Personal Access Token'
+AWS_SECRET_ACCESS_KEY:
+  pattern: '([a-zA-Z0-9/+=]{40})' 
+  severity: HIGH
+  description: 'AWS Secret Access Key'
+NHS_NUMBER:
+  pattern: '\b\d{3} \d{3} \d{4}\b'
+  severity: HIGH
+  description: 'UK National Health Service (NHS) Number'
+UK_NI_NUMBER:
+  pattern: '\s*[a-zA-Z]{2}(?:[\s-]*\d[\s-]*){6}[a-zA-Z]?\s*'
+  severity: HIGH
+  description: 'UK National Insurance Number'
+UK_POSTCODE:
+  pattern: '([Gg][Ii][Rr] 0[Aa]{2})|((([A-Za-z][0-9]{1,2})|(([A-Za-z][A-Ha-hJ-Yj-y][0-9]{1,2})|(([A- Za-z][0-9][A-Za-z])|([A-Za-z][A-Ha-hJ-Yj-y][0-9]?[A-Za-z])))) [0-9][A-Za-z]{2})'
+  severity: MEDIUM
+  description: 'UK Postal Code (Postcode)'
