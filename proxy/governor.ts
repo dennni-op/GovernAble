@@ -20,7 +20,7 @@ async function enforceText(text: string) {
       // For the MVP, we're hard-coding a default policy: "REDACT by default".
       policy: { name: "default", mode: "REDACT", rules: [] }
     });
-    // It returns the decision from the API (e.g., { action: "REDACT", ... }).
+    // It returns the decision from the API (e.g., { action: "REDACT"," WARN" , "BLOCK"}).
     return resp.data;
   } catch (e) {
     // If our Python API is down, we should probably block the request for safety.
