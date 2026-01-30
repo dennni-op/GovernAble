@@ -1,41 +1,52 @@
 # api/config.py
 from pydantic import BaseSettings, Field
+from typing import Literal
 
 class Settings(BaseSettings):
     # --- Project Info ---
-    # This is for basic, non-sensitive information about your application.
-    # It's useful for things like setting the title in your API documentation.
-    PROJECT_NAME: str = "GovernAble API"
+    PROJECT_NAME: str = "GovernAble AI Governance Engine"
     API_V1_STR: str = "/api/v1"
-
-    # --- Security & Secrets ---
-    # This is the most critical section. These are values that must be kept secret.
-    # The secret API key clients must use to access your service.
-    # The default 'dev_key' is just for development. In production, you would set
-    # this using an environment variable (GA_API_KEY) for security.
+    ENV: Literal["development", "staging", "production"] = Field("development", env="ENV")
+    
+    # --- Security & Authentication ---
     API_KEY: str = Field("dev_key", env="GA_API_KEY")
-
-    # A comma-separated string of websites that are allowed to connect to this API.
-    # For development, "*" (allowing everyone) is okay.
-    # For production, you MUST lock this down (e.g., "https://app.governable.com").
     CORS_ORIGINS: str = Field("*", env="CORS_ORIGINS")
-
+    
+    # --- AI Governance Settings ---
+    DEFAULT_GOVERNANCE_POLICY: Literal["strict", "redact", "warn"] = Field(
+        "strict", 
+        env="DEFAULT_POLICY",
+        description="Default policy for AI governance: strict=BLOCK, redact=REDACT, warn=WARN"
+    )
+    
+    ALLOWED_AI_SERVICES: str = Field(
+        "openai,anthropic", 
+        env="ALLOWED_AI_SERVICES",
+        description="Comma-separated list of approved AI services"
+    )
+    
     # --- Database ---
-    # This tells your application how to find and log into your database.
-    # The default is a simple file-based SQLite database, which is great for development.
-    # For production, you would change this to a PostgreSQL or MySQL connection string.
     DATABASE_URL: str = Field("sqlite+aiosqlite:///./governable.db", env="DATABASE_URL")
-
-    # --- Application Tuning Knobs ---
-    # These are adjustable parameters that control your app's behavior.
-    # It's good practice to make values like this configurable instead of hard-coding them.
-    # The maximum file size (in bytes) that the /scan/file endpoint will accept.
-    MAX_SCAN_FILE_BYTES: int = Field(5_000_000, env="MAX_SCAN_FILE_BYTES") # Default: 5MB
-
+    
+    # --- Scanning Limits ---
+    MAX_SCAN_FILE_BYTES: int = Field(5_000_000, env="MAX_SCAN_FILE_BYTES")
+    MAX_PROMPT_LENGTH: int = Field(100_000, env="MAX_PROMPT_LENGTH", description="Max AI prompt length")
+    
+    # --- Audit & Compliance ---
+    ENABLE_AUDIT_LOGGING: bool = Field(True, env="ENABLE_AUDIT_LOGGING")
+    AUDIT_LOG_RETENTION_DAYS: int = Field(90, env="AUDIT_LOG_RETENTION_DAYS")
+    
+    # --- Alerts & Notifications ---
+    SLACK_WEBHOOK_URL: str = Field("", env="SLACK_WEBHOOK_URL")
+    ALERT_ON_BLOCKED_REQUESTS: bool = Field(True, env="ALERT_ON_BLOCKED")
+    
     class Config:
-        # This tells Pydantic to also load these settings from a file named .env
-        # This allows you to override the defaults for production without changing the code.
         env_file = ".env"
+        case_sensitive = False
 
-# Create a single, reusable instance of the settings that the rest of our app can use.
+    def is_ai_service_allowed(self, service: str) -> bool:
+        """Check if AI service is in the allowlist"""
+        allowed = [s.strip().lower() for s in self.ALLOWED_AI_SERVICES.split(",")]
+        return service.lower() in allowed
+
 settings = Settings()
