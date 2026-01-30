@@ -1177,4 +1177,533 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:8787
 
 ---
 
+## 💻 Performance & Resource Optimization for Low-End Laptops
+
+**Running GovernAble on low-spec hardware?** Here are optimization strategies to reduce CPU, RAM, and disk usage while maintaining functionality.
+
+### 📊 Resource Requirements
+
+**Minimum specs:**
+- **CPU**: 2 cores (Intel i3 or equivalent)
+- **RAM**: 4GB (6GB recommended)
+- **Storage**: 5GB free space
+- **OS**: Windows 10/11, Linux, macOS
+
+**What uses the most resources:**
+1. **Python API (FastAPI + Presidio)**: 300-500MB RAM, moderate CPU
+2. **TypeScript Proxy (Node.js)**: 150-250MB RAM, low CPU
+3. **React Dashboard**: 100-200MB RAM (when running dev server)
+4. **Database**: 50-100MB RAM for SQLite, more for PostgreSQL
+
+### 🔧 Optimization Strategy 1: Disable Heavy Components
+
+**For development on low-end laptops, you can run in "lightweight mode":**
+
+#### Option A: API Only (No Proxy, No Dashboard)
+```powershell
+# Just run the enforcement API
+uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
+
+# Test with curl/Postman - no frontend needed
+curl -X POST http://localhost:8000/api/v1/scan/text `
+  -H "Content-Type: application/json" `
+  -d '{"text":"Test prompt with API key AKIAIOSFODNN7"}'
+```
+
+**Resources saved:** ~400MB RAM, 1 CPU core
+
+#### Option B: Disable Presidio (ML-based PII Detection)
+```python
+# In api/config.py, add:
+USE_PRESIDIO: bool = Field(False, env="USE_PRESIDIO")
+
+# In engine/scanner.py:
+class Scanner:
+    def __init__(self, patterns: Optional[Dict] = None, use_presidio: bool = False):
+        # Default to False instead of True
+        self.use_presidio = use_presidio and settings.USE_PRESIDIO
+```
+
+**Resources saved:** ~200-300MB RAM (Presidio loads ML models)
+
+#### Option C: Use SQLite Instead of PostgreSQL
+```bash
+# In .env file:
+DATABASE_URL=sqlite+aiosqlite:///./governable.db
+
+# NOT:
+# DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/governable
+```
+
+**Resources saved:** ~100-200MB RAM (no PostgreSQL process)
+
+### 🚀 Optimization Strategy 2: Reduce Docker Overhead
+
+**If using Docker Compose, limit resource usage:**
+
+Update `docker-compose.yml`:
+```yaml
+version: '3.8'
+
+services:
+  api:
+    build: .
+    # Limit CPU and memory
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'      # Max 1 CPU core
+          memory: 512M     # Max 512MB RAM
+        reservations:
+          cpus: '0.5'      # Guaranteed 0.5 CPU
+          memory: 256M     # Guaranteed 256MB RAM
+    environment:
+      - USE_PRESIDIO=false  # Disable heavy ML
+      - WORKERS=1           # Single worker process
+
+  proxy:
+    build: ./proxy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+```
+
+**Alternative: Skip Docker entirely**
+```powershell
+# Run natively (uses less RAM than Docker)
+# Terminal 1: Python API
+.\venv\Scripts\Activate.ps1
+uvicorn api.main:app --reload --workers 1
+
+# Terminal 2: TypeScript Proxy (optional)
+cd proxy
+npm start
+```
+
+### ⚡ Optimization Strategy 3: Reduce Python Worker Processes
+
+**By default, Uvicorn might spawn multiple workers. For low-end laptops:**
+
+```powershell
+# Single worker (less RAM, but slower under load)
+uvicorn api.main:app --reload --workers 1 --limit-concurrency 10
+
+# Production mode (no auto-reload = less CPU)
+uvicorn api.main:app --workers 1 --host 0.0.0.0 --port 8000
+```
+
+**Trade-off:**
+- ✅ **Saves**: 200-300MB RAM per worker
+- ❌ **Cost**: Can only handle 1 request at a time
+
+### 🗃️ Optimization Strategy 4: Database Tuning
+
+#### SQLite Optimizations
+```python
+# In api/services/storage.py
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_conn, connection_record):
+    """Optimize SQLite for low memory"""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")      # Write-Ahead Logging (faster)
+    cursor.execute("PRAGMA synchronous=NORMAL")    # Balance safety/speed
+    cursor.execute("PRAGMA cache_size=-32000")     # 32MB cache (reduce if needed)
+    cursor.execute("PRAGMA temp_store=MEMORY")     # Use RAM for temp tables
+    cursor.close()
+```
+
+#### Limit Query Results
+```python
+# In api/routes/scan.py
+@router.get("/results")
+async def get_scan_results(limit: int = 10, skip: int = 0):
+    """Always paginate - never return all results"""
+    if limit > 100:
+        limit = 100  # Cap at 100 to prevent memory issues
+    
+    async with AsyncSessionLocal() as session:
+        stmt = select(ScanResult).offset(skip).limit(limit)
+        result = await session.execute(stmt)
+        return result.scalars().all()
+```
+
+### 📝 Optimization Strategy 5: Logging & File I/O
+
+**Excessive logging can slow down low-end systems:**
+
+```python
+# In api/config.py
+LOG_LEVEL: str = Field("WARNING", env="LOG_LEVEL")  # INFO, DEBUG, WARNING, ERROR
+
+# In api/main.py
+import logging
+
+if settings.LOG_LEVEL == "WARNING":
+    logging.basicConfig(level=logging.WARNING)
+else:
+    logging.basicConfig(level=logging.INFO)
+```
+
+**For proxy/governor.ts:**
+```typescript
+// Disable winston file logging on low-end systems
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'error',  // Only log errors
+  transports: [
+    // Comment out file transport to reduce disk I/O
+    // new winston.transports.File({ filename: 'ai-governance.log' }),
+    new winston.transports.Console({ 
+      format: winston.format.simple()  // Simple format = faster
+    })
+  ]
+});
+```
+
+### 🧪 Optimization Strategy 6: Reduce Frontend Resource Usage
+
+**React dev server can be heavy. Alternatives:**
+
+#### Option A: Build for Production (Faster)
+```powershell
+cd web/frontend
+npm run build
+
+# Serve static files (much lighter than dev server)
+npx serve -s build -p 3000
+```
+
+**Resources saved:** ~150MB RAM, less CPU usage
+
+#### Option B: Skip Frontend Entirely
+```powershell
+# Use API documentation UI instead
+# Open http://localhost:8000/docs
+
+# Or use curl/Postman for testing
+```
+
+### 🔍 Optimization Strategy 7: Monitor Resource Usage
+
+**Track what's using resources:**
+
+#### Windows PowerShell
+```powershell
+# Check memory usage
+Get-Process python | Select-Object Name, CPU, WorkingSet
+Get-Process node | Select-Object Name, CPU, WorkingSet
+
+# Continuous monitoring
+while ($true) {
+    Clear-Host
+    Get-Process python,node | Format-Table Name, 
+        @{Label="CPU(%)";Expression={$_.CPU}}, 
+        @{Label="RAM(MB)";Expression={[math]::Round($_.WorkingSet/1MB,2)}}
+    Start-Sleep -Seconds 2
+}
+```
+
+#### Linux/Mac
+```bash
+# Monitor with htop (install: sudo apt install htop)
+htop
+
+# Or use ps
+watch -n 2 'ps aux | grep -E "python|node" | grep -v grep'
+```
+
+### 📊 Optimization Results: Expected Performance
+
+| Configuration | RAM Usage | CPU Usage | Startup Time |
+|---------------|-----------|-----------|--------------|
+| **Full Stack (All services)** | ~1.2GB | High | 15-20s |
+| **API Only** | ~400MB | Medium | 5-8s |
+| **API without Presidio** | ~200MB | Low | 3-5s |
+| **Minimal (API + SQLite, no logs)** | ~150MB | Very Low | 2-3s |
+
+### 🎯 Recommended Setup for Low-End Laptops
+
+**For daily development:**
+```powershell
+# 1. Disable Presidio
+# In .env:
+USE_PRESIDIO=false
+
+# 2. Run API only (no proxy, no frontend)
+uvicorn api.main:app --reload --workers 1 --port 8000
+
+# 3. Test with FastAPI docs
+# Open http://localhost:8000/docs
+```
+
+**When you need to test the full stack:**
+```powershell
+# 1. Build frontend once
+cd web/frontend
+npm run build
+
+# 2. Run API + Proxy (skip dashboard dev server)
+# Terminal 1:
+uvicorn api.main:app --workers 1 --port 8000
+
+# Terminal 2:
+cd proxy
+npm start
+
+# 3. Serve built frontend
+cd web/frontend
+npx serve -s build -p 3000
+```
+
+### 🛠️ Troubleshooting Low-End Performance
+
+**Problem: "Python process using too much RAM"**
+```powershell
+# Solution 1: Disable Presidio
+# Set USE_PRESIDIO=false in .env
+
+# Solution 2: Reduce worker count
+uvicorn api.main:app --workers 1
+
+# Solution 3: Add garbage collection
+# In api/main.py:
+import gc
+@app.middleware("http")
+async def cleanup_middleware(request, call_next):
+    response = await call_next(request)
+    gc.collect()  # Force garbage collection
+    return response
+```
+
+**Problem: "Node.js proxy using too much RAM"**
+```powershell
+# Solution: Limit Node.js heap size
+$env:NODE_OPTIONS="--max-old-space-size=256"  # Limit to 256MB
+npm start
+```
+
+**Problem: "System freezes when running all services"**
+```powershell
+# Solution: Run services one at a time
+# 1. Start API, wait for it to be ready
+uvicorn api.main:app --reload --port 8000
+
+# 2. Wait 10 seconds, then start proxy
+Start-Sleep -Seconds 10
+cd proxy; npm start
+
+# 3. Skip dashboard or build it statically
+```
+
+**Problem: "SQLite database locked errors"**
+```powershell
+# Solution: Enable WAL mode (see Database Tuning above)
+# Or delete and recreate database:
+Remove-Item governable.db
+python -c "import asyncio; from api.services.storage import init_db; asyncio.run(init_db())"
+```
+
+### 💡 Pro Tips for Low-End Development
+
+1. **Close other applications**: Browser tabs, IDE extensions, background apps
+2. **Use lightweight IDE**: VS Code with minimal extensions, or Notepad++/Vim
+3. **Disable antivirus scanning**: Add project folder to exclusions (be careful!)
+4. **Use SSD if possible**: Much faster than HDD for database operations
+5. **Clean temp files regularly**: `python -m pip cache purge`
+6. **Consider Linux**: Often uses less RAM than Windows for development
+
+---
+
+## 📚 Learning Resources & Further Reading
+
+### 🎓 Beginner-Friendly Tutorials
+
+#### FastAPI
+- **Official Tutorial**: https://fastapi.tiangolo.com/tutorial/
+  - ⭐ Best place to start, very beginner-friendly
+  - Covers routing, request handling, validation
+- **Video Course**: [FastAPI - The Complete Course (YouTube)](https://www.youtube.com/watch?v=tLKKmouUams)
+  - 7+ hours of hands-on coding
+- **Interactive Course**: [Test-Driven Development with FastAPI and Docker](https://testdriven.io/courses/tdd-fastapi/)
+
+#### Pydantic
+- **Official Docs**: https://docs.pydantic.dev/latest/
+  - Start with "Why Use Pydantic?" section
+- **Tutorial**: [Pydantic is All You Need](https://www.youtube.com/watch?v=Vj-iU-8_xLs)
+  - 30-minute video, covers all basics
+
+#### TypeScript/Node.js
+- **TypeScript Handbook**: https://www.typescriptlang.org/docs/handbook/intro.html
+  - Official guide, very comprehensive
+- **Node.js Express Tutorial**: https://expressjs.com/en/starter/hello-world.html
+  - Learn Express in 30 minutes
+- **Proxy Pattern**: [Understanding Reverse Proxies](https://www.cloudflare.com/learning/cdn/glossary/reverse-proxy/)
+
+#### React
+- **Official Tutorial**: https://react.dev/learn
+  - Interactive, builds a tic-tac-toe game
+- **React Hooks**: https://react.dev/reference/react
+  - Deep dive into useState, useEffect, etc.
+- **Video**: [React Course for Beginners](https://www.youtube.com/watch?v=bMknfKXIFA8)
+  - 12 hours, but you can skip to relevant sections
+
+### 🔐 AI Governance & Security
+
+#### AI Security
+- **OWASP Top 10 for LLMs**: https://owasp.org/www-project-top-10-for-large-language-model-applications/
+  - ⭐ Essential reading for AI security
+  - Covers prompt injection, data leakage, etc.
+- **NIST AI Risk Management**: https://www.nist.gov/itl/ai-risk-management-framework
+  - Government framework for AI governance
+- **Article**: ["Shadow AI: The Hidden Threat"](https://www.microsoft.com/en-us/security/blog/2023/12/07/shadow-ai/)
+
+#### Data Protection & PII Detection
+- **Presidio Documentation**: https://microsoft.github.io/presidio/
+  - Microsoft's PII detection library
+- **GDPR Compliance Guide**: https://gdpr.eu/
+  - Understand EU data protection regulations
+- **Regex Tutorial**: https://regexone.com/
+  - Interactive lessons for pattern matching
+
+### 🛠️ Performance & Optimization
+
+#### Python Performance
+- **Article**: ["Making Python Code 10x Faster"](https://martinheinz.dev/blog/64)
+- **Video**: [Python Performance Tips](https://www.youtube.com/watch?v=YY7yJHo0M5I)
+- **Tool**: [memory-profiler](https://github.com/pythonprofilers/memory_profiler)
+  - Profile Python memory usage line-by-line
+
+#### Database Optimization
+- **SQLAlchemy Performance**: https://docs.sqlalchemy.org/en/20/faq/performance.html
+  - Official performance tips
+- **SQLite Optimization**: https://www.sqlite.org/optoverview.html
+  - Understand query planning and indexes
+- **Video**: [Database Indexing Explained](https://www.youtube.com/watch?v=fsG1XaZEa78)
+
+#### Node.js Performance
+- **Article**: ["Node.js Memory Management"](https://blog.appsignal.com/2020/05/06/nodejs-memory-management-guide.html)
+- **Tool**: [clinic.js](https://clinicjs.org/)
+  - Performance profiling for Node.js apps
+
+### 🧪 Testing & Quality
+
+#### Python Testing
+- **pytest Documentation**: https://docs.pytest.org/en/stable/
+  - Best testing framework for Python
+- **Video**: [Python Testing with pytest](https://www.youtube.com/watch?v=bbp_849-RZ4)
+- **Book**: [Test-Driven Development with Python](https://www.obeythetestinggoat.com/)
+  - Free online book
+
+#### API Testing
+- **Postman Learning**: https://learning.postman.com/
+  - Official tutorials for API testing
+- **Article**: ["API Testing Best Practices"](https://blog.postman.com/api-testing-best-practices/)
+
+### 🐳 DevOps & Deployment
+
+#### Docker
+- **Docker Tutorial**: https://docker-curriculum.com/
+  - Beginner-friendly, hands-on
+- **Video**: [Docker Crash Course](https://www.youtube.com/watch?v=pg19Z8LL06w)
+  - 1 hour overview
+- **Compose Guide**: https://docs.docker.com/compose/gettingstarted/
+
+#### Production Deployment
+- **Article**: ["Deploying FastAPI on AWS"](https://aws.amazon.com/blogs/compute/deploying-machine-learning-models-with-serverless-templates/)
+- **Guide**: ["Production-Ready FastAPI"](https://testdriven.io/blog/fastapi-production/)
+  - Covers logging, monitoring, security
+
+### 📖 Books (Free & Paid)
+
+#### Free
+- **"Automate the Boring Stuff with Python"**: https://automatetheboringstuff.com/
+  - Great for Python basics
+- **"The Python Tutorial"**: https://docs.python.org/3/tutorial/
+  - Official Python documentation
+- **"You Don't Know JS"**: https://github.com/getify/You-Dont-Know-JS
+  - Deep dive into JavaScript
+
+#### Paid (Worth It)
+- **"Fluent Python" by Luciano Ramalho**
+  - Advanced Python patterns
+- **"Designing Data-Intensive Applications" by Martin Kleppmann**
+  - Database and system design
+- **"Release It!" by Michael Nygard**
+  - Production systems and resilience
+
+### 🎥 YouTube Channels
+
+- **[Corey Schafer](https://www.youtube.com/c/Coreyms)**: Python, Django, Flask tutorials
+- **[Fireship](https://www.youtube.com/c/Fireship)**: Quick tech explanations (100 seconds series)
+- **[TechWorld with Nana](https://www.youtube.com/c/TechWorldwithNana)**: DevOps, Docker, Kubernetes
+- **[Traversy Media](https://www.youtube.com/c/TraversyMedia)**: Web development tutorials
+- **[Academind](https://www.youtube.com/c/Academind)**: React, TypeScript, Node.js
+
+### 🤝 Community & Help
+
+- **Stack Overflow**: https://stackoverflow.com/
+  - Search before asking, use tags like `[fastapi]`, `[python]`
+- **FastAPI Discord**: https://discord.gg/VQjSZaeJmf
+  - Very active community, helpful maintainers
+- **Reddit**: r/Python, r/learnprogramming, r/webdev
+- **GitHub Discussions**: Your own repo!
+  - Enable "Discussions" tab for community support
+
+### 🔧 Tools & Extensions
+
+#### VS Code Extensions
+- **Python** (Microsoft): Linting, debugging, IntelliSense
+- **Pylance**: Fast Python language server
+- **REST Client**: Test APIs without leaving VS Code
+- **SQLite Viewer**: Browse database files
+- **Docker**: Manage containers from IDE
+- **GitLens**: Enhanced Git integration
+
+#### Productivity Tools
+- **[HTTPie](https://httpie.io/)**: Beautiful command-line HTTP client
+  - `http POST localhost:8000/api/v1/scan/text text="test"`
+- **[jq](https://stedolan.github.io/jq/)**: JSON processor for terminal
+  - `curl localhost:8000/api/v1/scan/text | jq`
+- **[Bruno](https://www.usebruno.com/)**: Open-source Postman alternative
+
+### 📝 Cheat Sheets & Quick References
+
+- **FastAPI Cheat Sheet**: https://gist.github.com/bgalvao/5c8e0cc3ea3c7a5ec37fac36e8c0e40c
+- **Python Type Hints**: https://mypy.readthedocs.io/en/stable/cheat_sheet_py3.html
+- **SQL Cheat Sheet**: https://www.sqltutorial.org/sql-cheat-sheet/
+- **Regex Cheat Sheet**: https://regexr.com/
+- **Git Cheat Sheet**: https://education.github.com/git-cheat-sheet-education.pdf
+
+### 🎯 Practice Projects
+
+**After learning the basics, try building:**
+
+1. **URL Shortener**: Practice FastAPI routing and database
+2. **Todo API**: CRUD operations, authentication
+3. **File Upload Service**: Handle multipart forms, storage
+4. **Chat Application**: WebSockets, real-time communication
+5. **Rate Limiter**: Middleware, performance optimization
+
+---
+
+## 🆘 Getting Help
+
+**Stuck? Here's how to get unblocked:**
+
+1. **Read error messages carefully**: They usually tell you exactly what's wrong
+2. **Check logs**: `docker-compose logs api` or terminal output
+3. **Search GitHub Issues**: Someone probably had the same problem
+4. **Ask specific questions**: 
+   - ❌ "It doesn't work"
+   - ✅ "Getting 422 error when posting to /scan/text with payload {...}"
+5. **Share minimal reproducible example**: Simplify until you find the root cause
+
+**Good luck and happy coding!** 🚀
+
+---
+
 **Questions?** Review this guide and start implementing changes file by file. The core logic stays the same - we're just reframing it as an AI governance platform!
